@@ -7,3 +7,9 @@
 # Output files
 build/
 *.out
+
+# VS code
+.vscode/
+
+# backup files
+*.bak

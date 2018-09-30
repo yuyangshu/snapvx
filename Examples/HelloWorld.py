@@ -20,4 +20,4 @@ gvx.AddEdge(1, 2, Objective=square(norm(x1 - x2)), Constraints=[])
 
 #Solve the problem, and print the solution
 gvx.Solve()
-print gvx.PrintSolution()
+print(gvx.PrintSolution())

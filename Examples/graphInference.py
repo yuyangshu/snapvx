@@ -16,10 +16,10 @@ np.random.seed(1)
 gvx = TGraphVX()
 empCov = np.random.randn(numFeatures+1,100*(numFeatures+1))
 empCov = np.cov(empCov)
-S = semidefinite(numFeatures+1,name='S')
+S = Variable(shape=(numFeatures+1,numFeatures+1),PSD=True,name='S',value=np.array([[0., 0., 0.] for _ in range(3)]))
 
 #add the two nodes
-gvx.AddNode(0,Objective=trace(S*empCov)-log_det(S))
+gvx.AddNode(0,Objective=-log_det(S))
 gvx.AddNode(1)
 
 #add an edge between them with the regularisation penalty on the non diagonal terms
