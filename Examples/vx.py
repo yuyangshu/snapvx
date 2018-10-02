@@ -80,14 +80,17 @@ def extract_fields(data, fields = "full"):
             if item[13] == "Parramatta":
                 # area size, # of bedrooms, # of baths, # of parkings, # of days since 1/1/2001, price
                 entries.append(list(map(lambda x: int(x) if x != "" else 0, item[32:36])) + \
-                               [(get_date(item[16].split()[0]) - base_date).days, float(item[17])])
+                               [(get_date(item[16].split()[0]) - base_date).days,
+                                float(item[73]),
+                                float(item[74]),
+                                float(item[17])])
 
     return entries
 
 
 #__main__
 
-# data = extract_fields(load_data("all", False, False), "minimal")
+data = extract_fields(load_data("all", False, False), "minimal")
 # print(len(data))
 # print(data[:10])
 
@@ -99,26 +102,28 @@ def extract_fields(data, fields = "full"):
 # plt.show()
 # 2729 - 2789, 60 days, 292 points
 
-# selected_data = [item for item in data if int(item[4]) >= 2729 and int(item[4]) <= 2789]
-with open("tiny_data", "rb") as f:
-    selected_data = pickle.load(f)
+selected_data = [item for item in data if int(item[4]) >= 2729 and int(item[4]) <= 2789]
+# with open("tiny_data", "rb") as f:
+#     selected_data = pickle.load(f)
 
 X = [item[:-1] + [1] for item in selected_data]
 Y = [item[-1] for item in selected_data]
 X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_size = 0.2, random_state = 0)
 
-# model = linear_model.LinearRegression(n_jobs = -1)
-# model.fit(X_train, Y_train)
-# Y_pred = model.predict(X_test)
-# print("RMSE:", math.sqrt(metrics.mean_squared_error(Y_pred, Y_test)))
-# print("r2_score:", metrics.r2_score(Y_pred, Y_test))
+model = linear_model.LinearRegression(n_jobs = -1)
+model.fit(X_train, Y_train)
+Y_pred = model.predict(X_test)
+print("RMSE:", math.sqrt(metrics.mean_squared_error(Y_pred, Y_test)))
+print("r2_score:", metrics.r2_score(Y_pred, Y_test))
 # RMSE: 91860.9158249504
 # r2_score: -14.770486911124548
 
-from snapvx import *
+# from snapvx import *
 
-gvx = TGraphVX()
-S = [Variable(shape = (6)) for _ in range(292)]
+# global_lambda = 1
+# gvx = TGraphVX()
+# S = [Variable(shape = (6)) for _ in range(X_train)]
 
-for i in range(292):
-    gvx.AddNode(
+# for i in range(len(X_train)):
+#     gvx.AddNode(NId = i, Objective = (S[i] - Y_train[i]) ** 2)
+
