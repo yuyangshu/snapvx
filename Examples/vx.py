@@ -103,6 +103,8 @@ data = extract_fields(load_data("all", False, False), "minimal")
 # 2729 - 2789, 60 days, 292 points
 
 selected_data = [item for item in data if int(item[4]) >= 2729 and int(item[4]) <= 2789]
+# with open("tiny_data", "wb") as f:
+#     pickle.dump(selected_data, f)
 # with open("tiny_data", "rb") as f:
 #     selected_data = pickle.load(f)
 
@@ -115,8 +117,8 @@ model.fit(X_train, Y_train)
 Y_pred = model.predict(X_test)
 print("RMSE:", math.sqrt(metrics.mean_squared_error(Y_pred, Y_test)))
 print("r2_score:", metrics.r2_score(Y_pred, Y_test))
-# RMSE: 91860.9158249504
-# r2_score: -14.770486911124548
+# RMSE: 82025.51851690875
+# r2_score: -3.961004990007666
 
 # from snapvx import *
 
