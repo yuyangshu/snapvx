@@ -1,9 +1,16 @@
 import os.path
 import csv
 import math
+import heapq
 import pickle
-import matplotlib.pyplot as plt
+import collections
+# import matplotlib.pyplot as plt
 from datetime import datetime
+
+import numpy
+import snap
+import cvxpy
+import snapvx
 from sklearn import metrics, model_selection, linear_model
 
 def load_data(years = "all", dump = False, load_dump = True):
@@ -74,11 +81,10 @@ def extract_fields(data, fields = "full"):
             if item[73] == "" or item[17] == "" or float(item[17]) == 0:
                 continue
 
-            # latitude = float(item[73])
-            # longitude = float(item[74])
             # parramatta station: -33.817303, 151.004823
             if item[13] == "Parramatta":
-                # area size, # of bedrooms, # of baths, # of parkings, # of days since 1/1/2001, price
+                # area size, # of bedrooms, # of baths, # of parkings, 
+                # # of days since 1/1/2001, latitude, longitude, price
                 entries.append(list(map(lambda x: int(x) if x != "" else 0, item[32:36])) + \
                                [(get_date(item[16].split()[0]) - base_date).days,
                                 float(item[73]),
@@ -87,45 +93,93 @@ def extract_fields(data, fields = "full"):
 
     return entries
 
+def lr_solve(X_train, X_test, Y_train, Y_test):
+
+    model = linear_model.LinearRegression(n_jobs = -1)
+    model.fit(X_train, Y_train)
+    Y_pred = model.predict(X_test)
+    print("RMSE:", math.sqrt(metrics.mean_squared_error(Y_pred, Y_test)))
+    print("r2_score:", metrics.r2_score(Y_pred, Y_test))
+
+def vx_solve(X_train, X_test, Y_train, Y_test):
+
+    def distance(i, j):
+        return cvxpy.norm(locations[i] - locations[j], 2).value
+
+    # set up globals and variables
+    lamb = 1
+    n = len(X_train)
+    gvx = snapvx.TGraphVX()
+    S = [cvxpy.Variable(shape = 6) for _ in range(n)]
+
+    # record geolocations of models, also record vector form to compute distance
+    geoinfo = dict()
+    locations = dict()
+    for i in range(n):
+        geoinfo[i] = (X_train[i][5], X_train[i][6])
+        locations[i] = numpy.array(geoinfo[i])
+
+    # record the nodes' connections
+    connections = collections.defaultdict(lambda: [])
+
+    # turn training data into numpy arrays
+    X_train = numpy.array([item[:5] + [1] for item in X_train])
+    Y_train = numpy.array(Y_train)
+
+    # add nodes, node cost = square error
+    # the original paper also added regularization terms
+    for i in range(n):
+        gvx.AddNode(NId = i, Objective = (S[i] * X_train[i] - Y_train[i]) ** 2)
+
+    # add 3 edges for each node, to nearest neighbours
+    for i in range(n):
+        edge_pool = []
+        for j in range(n):
+            if geoinfo[i] != geoinfo[j]:
+                heapq.heappush(edge_pool, (distance(i, j), i, j))
+        for _ in range(3):
+            edge_to_add = heapq.heappop(edge_pool)
+            j = edge_to_add[2]
+            if j not in connections[i]:
+                gvx.AddEdge(SrcNId = i,
+                            DstNId = j,
+                            Objective = 1/edge_to_add[0] * cvxpy.norm(S[i] - S[j], 2))
+                connections[i] += [j]
+                connections[j] += [i]
+
+    print(connections)
+    gvx.Solve(Verbose=True, Rho=0.1)
+    gvx.PrintSolution()
+
+
 
 #__main__
 
-data = extract_fields(load_data("all", False, False), "minimal")
-# print(len(data))
-# print(data[:10])
-
-# dates = [item[4] for item in data]
-# n, bins, patches = plt.hist(dates, 50, alpha=0.5)
-# plt.show()
-# 2729 - 2848, 120 days, 524 points
-# n, bins, patches = plt.hist(dates, 100, alpha=0.5)
-# plt.show()
-# 2729 - 2789, 60 days, 292 points
-
-selected_data = [item for item in data if int(item[4]) >= 2729 and int(item[4]) <= 2789]
+## load data into selected_data ##
+# data = extract_fields(load_data("all", False, False), "minimal")
+# selected_data = [item for item in data if int(item[4]) >= 2729 and int(item[4]) <= 2789]
 # with open("tiny_data", "wb") as f:
 #     pickle.dump(selected_data, f)
-# with open("tiny_data", "rb") as f:
-#     selected_data = pickle.load(f)
+with open("tiny_data", "rb") as f:
+    selected_data = pickle.load(f)
 
+## prepare data ##
 X = [item[:-1] + [1] for item in selected_data]
 Y = [item[-1] for item in selected_data]
 X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_size = 0.2, random_state = 0)
 
-model = linear_model.LinearRegression(n_jobs = -1)
-model.fit(X_train, Y_train)
-Y_pred = model.predict(X_test)
-print("RMSE:", math.sqrt(metrics.mean_squared_error(Y_pred, Y_test)))
-print("r2_score:", metrics.r2_score(Y_pred, Y_test))
+## feed into model ##
+# if run regression with geoinfo
 # RMSE: 82025.51851690875
 # r2_score: -3.961004990007666
 
-# from snapvx import *
+# run regression without geoinfo
+# this should be the benchmark when comparing to the snapvx solution
+# X = [item[:-3] + [1] for item in selected_data]
+# Y = [item[-1] for item in selected_data]
+# lr_solve(X_train, X_test, Y_train, Y_test)
+# RMSE: 91860.91582495041
+# r2_score: -14.770486911124543
 
-# global_lambda = 1
-# gvx = TGraphVX()
-# S = [Variable(shape = (6)) for _ in range(X_train)]
-
-# for i in range(len(X_train)):
-#     gvx.AddNode(NId = i, Objective = (S[i] - Y_train[i]) ** 2)
-
+# run snapvx solution
+vx_solve(X_train, X_test, Y_train, Y_test)
