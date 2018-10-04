@@ -101,13 +101,12 @@ def lr_solve(X_train, X_test, Y_train, Y_test):
     print("RMSE:", math.sqrt(metrics.mean_squared_error(Y_pred, Y_test)))
     print("r2_score:", metrics.r2_score(Y_pred, Y_test))
 
-def vx_solve(X_train, X_test, Y_train, Y_test):
+def vx_solve(X_train, X_test, Y_train, Y_test, lamb = 1, mu = 0.1):
 
     def distance(i, j):
         return cvxpy.norm(locations[i] - locations[j], 2).value
 
-    # set up globals and variables
-    lamb = 1
+    # setup
     n = len(X_train)
     gvx = snapvx.TGraphVX()
     S = [cvxpy.Variable(shape = 6) for _ in range(n)]
@@ -129,7 +128,7 @@ def vx_solve(X_train, X_test, Y_train, Y_test):
     # add nodes, node cost = square error
     # the original paper also added regularization terms
     for i in range(n):
-        gvx.AddNode(NId = i, Objective = (S[i] * X_train[i] - Y_train[i]) ** 2)
+        gvx.AddNode(NId = i, Objective = (S[i] * X_train[i] - Y_train[i]) ** 2 + mu * cvxpy.norm(S[i][:-1], 2) ** 2)
 
     # add 3 edges for each node, to nearest neighbours
     for i in range(n):
@@ -140,17 +139,18 @@ def vx_solve(X_train, X_test, Y_train, Y_test):
         for _ in range(3):
             edge_to_add = heapq.heappop(edge_pool)
             j = edge_to_add[2]
+            print(edge_to_add[0], i, j, locations[i], locations[j])
             if j not in connections[i]:
                 gvx.AddEdge(SrcNId = i,
                             DstNId = j,
-                            Objective = 1/edge_to_add[0] * cvxpy.norm(S[i] - S[j], 2))
+                            Objective = lamb / edge_to_add[0] * cvxpy.norm(S[i] - S[j], 2))
                 connections[i] += [j]
                 connections[j] += [i]
 
-    print(connections)
     gvx.Solve(Verbose=True, Rho=0.1)
     gvx.PrintSolution()
-
+    
+    # test the model
 
 
 #__main__
@@ -181,5 +181,5 @@ X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_s
 # RMSE: 91860.91582495041
 # r2_score: -14.770486911124543
 
-# run snapvx solution
+# run snapvx
 vx_solve(X_train, X_test, Y_train, Y_test)
