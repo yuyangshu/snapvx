@@ -9,7 +9,6 @@ from datetime import datetime
 import numpy
 import snap
 import cvxpy
-import snapvx
 from sklearn import metrics, model_selection, linear_model
 
 def load_data(years = "all", dump = False, load_dump = True):
@@ -105,22 +104,19 @@ def lr_solve(X_train, X_test, Y_train, Y_test):
     print("RMSE:", math.sqrt(metrics.mean_squared_error(Y_pred, Y_test)))
     print("r2_score:", metrics.r2_score(Y_pred, Y_test))
 
-def vx_solve(X_train, X_test, Y_train, Y_test, lamb = 0, mu = 0.1):
+def cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 1, mu = 0.1):
 
     def distance(i, j):
         return cvxpy.norm(locations[i] - locations[j], 2).value
 
     # setup
     n = len(X_train)
-    gvx = snapvx.TGraphVX()
     S = [cvxpy.Variable(shape = 4) for _ in range(n)]
 
     # record geolocations of models, also record vector form to compute distance
-    geoinfo = dict()
     locations = dict()
     for i in range(n):
-        geoinfo[i] = (X_train[i][5], X_train[i][6])
-        locations[i] = numpy.array(geoinfo[i])
+        locations[i] = numpy.array((X_train[i][5], X_train[i][6]))
 
     # record the nodes' connections
     connections = collections.defaultdict(lambda: [])
@@ -129,31 +125,44 @@ def vx_solve(X_train, X_test, Y_train, Y_test, lamb = 0, mu = 0.1):
     X_train = numpy.array([item[:3] + [1] for item in X_train])
     Y_train = numpy.array(Y_train)
 
-    # add nodes, node cost = square error
-    # the original paper also added regularization terms
+    # collect costs
+    target = 0
+    constraints = []
+
+    # add nodes, node cost <= square error
+    # the original paper also added regularization terms like + mu * cvxpy.norm(S[i][:-1], 2) ** 2
     for i in range(n):
-        # could add regularization, + mu * cvxpy.norm(S[i][:-1], 2) ** 2
-        gvx.AddNode(NId = i, Objective = cvxpy.sum_squares(S[i] * X_train[i] - Y_train[i]))
+        target += (S[i] * X_train[i] - Y_train[i]) ** 2
 
     # add 3 edges for each node, to nearest neighbours
     for i in range(n):
         edge_pool = []
         for j in range(n):
-            if geoinfo[i] != geoinfo[j]:
+            if i != j:
                 heapq.heappush(edge_pool, (distance(i, j), i, j))
         for _ in range(3):
             edge_to_add = heapq.heappop(edge_pool)
+            dst = edge_to_add[0]
             j = edge_to_add[2]
             if j not in connections[i]:
-                gvx.AddEdge(SrcNId = i,
-                            DstNId = j,
-                            Objective = lamb / edge_to_add[0] * cvxpy.norm(S[i] - S[j], 2))
-                connections[i] += [j]
-                connections[j] += [i]
+                connections[i] += [(j, dst)]
+                connections[j] += [(i, dst)]
 
-    gvx.Solve(Verbose=True, Rho=0.1)
-    gvx.PrintSolution()
-    
+    for i in range(n):
+        for j, dst in connections[i]:
+            if dst > 0:
+                # lasso
+                target += lamb / dst * cvxpy.norm(S[i] - S[j], 2)
+            else:
+                # same location => add constraint
+                constraints.append(S[i] == S[j])
+
+    problem = cvxpy.Problem(cvxpy.Minimize(target), constraints)
+    result = problem.solve()
+    print(result)
+    for item in S:
+        print(item.value)
+
     # test the model
 
 
@@ -187,4 +196,4 @@ X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_s
 # [  -14.90423172 -4560.70742336  7427.1270868      0.        ]
 
 # run snapvx
-vx_solve(X_train, X_test, Y_train, Y_test)
+cvx_solve(X_train, X_test, Y_train, Y_test)
