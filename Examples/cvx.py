@@ -66,7 +66,6 @@ def extract_fields(data, fields = "full"):
         try:
             return datetime.strptime(date_str, "%d/%m/%Y")
         except:
-            print(date_str, datetime.strptime(date_str, "%d/%m/%y"))
             return datetime.strptime(date_str, "%d/%m/%y")
 
     # minimal for parramatta local model
@@ -94,16 +93,34 @@ def extract_fields(data, fields = "full"):
 
     return entries
 
+def set_scale(Y):
+    global base, stretch
+    base = float(min(Y))
+    stretch = float(max(Y) - base)
+
+def scaled_prices(Y):
+    scaled = []
+    for item in Y:
+        scaled.append((item - base) / stretch)
+    return scaled
+
 def lr_solve(X_train, X_test, Y_train, Y_test):
 
     model = linear_model.LinearRegression(n_jobs = -1)
     model.fit(X_train, Y_train)
-    # print(model.coef_)
+    print(model.coef_)
+
+    # print training error
+    Y_pred = model.predict(X_train)
+    print("training RMSE:", numpy.sqrt(metrics.mean_squared_error(Y_pred, Y_train)))
+    print("r2_score:", metrics.r2_score(Y_pred, Y_train))
+
+    # print testing error
     Y_pred = model.predict(X_test)
     print("RMSE:", numpy.sqrt(metrics.mean_squared_error(Y_pred, Y_test)))
     print("r2_score:", metrics.r2_score(Y_pred, Y_test))
 
-def cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 1, mu = 0.1, num_neighbours = 3):
+def cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 1, num_neighbours = 3):
 
     def distance(a, b):
         return cvxpy.norm(a - b, 2).value
@@ -120,7 +137,7 @@ def cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 1, mu = 0.1, num_neighbou
             else:
                 # if the property falls right on one model
                 return (S[j] * item_X).value
-        
+
         return prediction_acc / total_weights
 
     # setup
@@ -172,7 +189,11 @@ def cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 1, mu = 0.1, num_neighbou
 
     # learn the models
     problem = cvxpy.Problem(cvxpy.Minimize(target), constraints)
-    result = problem.solve()
+    try:
+        result = problem.solve()
+    except:
+        print("resorting to SCS")
+        result = problem.solve(solver= "SCS")
 
     # print total training error and model parameters
     print("approximate training RMSE:", numpy.sqrt(result / n))
@@ -203,16 +224,24 @@ def cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 1, mu = 0.1, num_neighbou
 
 ## load data into selected_data ##
 # data = extract_fields(load_data("all", False, False), "minimal")
-# selected_data = [item for item in data if int(item[4]) >= 2729 and int(item[4]) <= 2789]
+# 2729-2789 has the highest # of transactions per day
+# selected_data = [item for item in data if int(item[4]) >= 2500 and int(item[4]) <= 3000]
 # with open("tiny_data", "wb") as f:
 #     pickle.dump(selected_data, f)
 with open("tiny_data", "rb") as f:
     selected_data = pickle.load(f)
+print("using {} data points".format(len(selected_data)))
 
 ## prepare data ##
+# train/test split
 X = [item[:-1] + [1] for item in selected_data]
 Y = [item[-1] for item in selected_data]
 X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_size = 0.2, random_state = 0)
+
+# scale price
+set_scale(Y_train)
+Y_train = scaled_prices(Y_train)
+Y_test = scaled_prices(Y_test)
 
 ## feed into model ##
 lr_solve(X_train, X_test, Y_train, Y_test)
@@ -226,7 +255,21 @@ lr_solve(X_train, X_test, Y_train, Y_test)
 # r2_score: -13.579062442242591
 
 # run cvxpy solver
-cvx_solve(X_train, X_test, Y_train, Y_test)
+cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 2)
 # approximate training RMSE: 17926.230370414116
 # RMSE: 1272853.232496521
 # lambda = 100 fails, "Try recentering the problem data around 0 and rescaling to reduce the dynamic range"
+
+# on 2500-3000 parramatta data (1438 data points), lr: 110124.09481602373, cvx: no solution :/
+# on scaled 2500-3000 parramatta data, lr: 0.03656112050942301 training, 0.030505289422723514 testing
+# cvx (3 neighbours, lambda = 0): 0.010145347817968357 training, 0.0182809049029369 testing <= nearest neighbour
+# cvx (3 neighbours, lambda = 0.1): 0.01508455879395313 training, 0.058362016319825696 testing
+# cvx (3 neighbours, lambda = 1): 0.024019093475297012 training, 0.05985552934759591 testing
+# lambda == 2 did not yield a solution, did not converge?
+# cvx (3 neighbours, lambda = 5): 0.0262930578363592 training, 0.06326060643155203 testing <= already past lambda_critical?
+# cvx (3 neighbours, lambda = 10): 0.026292826760141667 training, 0.0632787315052425 testing <= still not a single lr model
+# cvx (3 neighbours, lambda = 100): 0.02629291391475474 training, 0.06327442365042268 testing <= due to inconnectivity
+
+# lr with 3 features: 0.0381369208994274 training, 0.03344856217831561 testing, r2 -55.18321848985361 training, -40.18529162832535 testing
+# forcing all variables to equal, 0.03804955415148768 training, 0.033916913769046354 testing <= more like a single lr model
+# model parameters: [-1.20371415e-06  3.26185175e-04 -6.33145122e-03  6.41894551e-02]
