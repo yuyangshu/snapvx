@@ -1,0 +1,38 @@
+------- unscaled, 297 data points --------
+# lr with 7 features
+# RMSE: 82025.51851690875
+# r2_score: -3.961004990007666
+
+# lr with 3 features
+# RMSE: 91193.75444985367
+# r2_score: -13.579062442242591
+
+# convex optimization
+# approximate training RMSE: 17926.230370414116
+# RMSE: 1272853.232496521
+# lambda = 100 fails, "Try recentering the problem data around 0 and rescaling to reduce the dynamic range"
+
+--------- unscaled, 1438 data points --------
+# on 2500-3000 (time) parramatta data (1438 data points), lr: 110124.09481602373, cvx: no solution
+
+--------- scaled, 1438 data points ----------
+# lr with 7 features
+# RMSE: 0.03656112050942301 training, 0.030505289422723514 testing
+# r2_score: -8.308838883629296 training, -6.369543465112357 testing
+
+# lr with 3 features
+# RMSE: 0.0381369208994274 training, 0.03344856217831561 testing
+# r2_score:  -55.18321848985361 training, -40.18529162832535 testing
+[-1.37009044e-06  3.42156305e-04 -6.28684518e-03  0.00000000e+00]
+
+# convex optimization
+# 3 neighbours, lambda = 0: 0.010145347817968357 training, 0.0182809049029369 testing <= nearest neighbour
+# 3 neighbours, lambda = 0.1: 0.01508455879395313 training, 0.058362016319825696 testing
+# 3 neighbours, lambda = 1: 0.024019093475297012 training, 0.05985552934759591 testing
+# lambda == 2 did not yield a solution, did not converge?
+# 3 neighbours, lambda = 5: 0.0262930578363592 training, 0.06326060643155203 testing <= already past lambda_critical?
+# 3 neighbours, lambda = 10: 0.026292826760141667 training, 0.0632787315052425 testing <= still not a single lr model
+# 3 neighbours, lambda = 100: 0.02629291391475474 training, 0.06327442365042268 testing <= due to inconnectivity
+
+# forcing all variables to equal, 0.03804955415148768 training, 0.033916913769046354 testing <= more like a single lr model
+# model parameters: [-1.20371415e-06  3.26185175e-04 -6.33145122e-03  6.41894551e-02]

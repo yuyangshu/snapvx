@@ -47,15 +47,15 @@ def load_data(years = "all", dump = False, load_dump = True):
                 pickle.dump(data, f)
 
     else:
-        if load_dump and os.path.isfile("small_data"):
+        if load_dump and os.path.isfile("2017_data"):
             print("restoring dumped data (2017)")
-            with open("small_data", "rb") as f:
+            with open("2017_data", "rb") as f:
                 return pickle.load(f)
 
         data = read_csv_file("2017")
 
         if dump:
-            with open("small_data", 'wb') as f:
+            with open("2017_data", 'wb') as f:
                 pickle.dump(data, f)
 
     return data[1:]
@@ -68,7 +68,7 @@ def extract_fields(data, fields = "full"):
         except:
             return datetime.strptime(date_str, "%d/%m/%y")
 
-    # minimal for parramatta local model
+    # minimal for snapvx validation
     assert(fields in {"full", "reduced", "minimal"})
 
     base_date = get_date("1/1/2001")
@@ -244,32 +244,8 @@ Y_train = scaled_prices(Y_train)
 Y_test = scaled_prices(Y_test)
 
 ## feed into model ##
+# linear regression
 lr_solve(X_train, X_test, Y_train, Y_test)
 
-# if run regression with 7 features
-# RMSE: 82025.51851690875
-# r2_score: -3.961004990007666
-
-# run regression with 3 features
-# RMSE: 91193.75444985367
-# r2_score: -13.579062442242591
-
-# run cvxpy solver
+# convex optimization
 cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 2)
-# approximate training RMSE: 17926.230370414116
-# RMSE: 1272853.232496521
-# lambda = 100 fails, "Try recentering the problem data around 0 and rescaling to reduce the dynamic range"
-
-# on 2500-3000 parramatta data (1438 data points), lr: 110124.09481602373, cvx: no solution :/
-# on scaled 2500-3000 parramatta data, lr: 0.03656112050942301 training, 0.030505289422723514 testing
-# cvx (3 neighbours, lambda = 0): 0.010145347817968357 training, 0.0182809049029369 testing <= nearest neighbour
-# cvx (3 neighbours, lambda = 0.1): 0.01508455879395313 training, 0.058362016319825696 testing
-# cvx (3 neighbours, lambda = 1): 0.024019093475297012 training, 0.05985552934759591 testing
-# lambda == 2 did not yield a solution, did not converge?
-# cvx (3 neighbours, lambda = 5): 0.0262930578363592 training, 0.06326060643155203 testing <= already past lambda_critical?
-# cvx (3 neighbours, lambda = 10): 0.026292826760141667 training, 0.0632787315052425 testing <= still not a single lr model
-# cvx (3 neighbours, lambda = 100): 0.02629291391475474 training, 0.06327442365042268 testing <= due to inconnectivity
-
-# lr with 3 features: 0.0381369208994274 training, 0.03344856217831561 testing, r2 -55.18321848985361 training, -40.18529162832535 testing
-# forcing all variables to equal, 0.03804955415148768 training, 0.033916913769046354 testing <= more like a single lr model
-# model parameters: [-1.20371415e-06  3.26185175e-04 -6.33145122e-03  6.41894551e-02]
