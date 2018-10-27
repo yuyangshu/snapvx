@@ -67,6 +67,12 @@ def extract_fields(data, fields = "full"):
             return datetime.strptime(date_str, "%d/%m/%Y")
         except:
             return datetime.strptime(date_str, "%d/%m/%y")
+    
+    def get_postcode(postcode):
+        try:
+            return int(postcode)
+        except:
+            return 0
 
     # minimal for snapvx validation
     assert(fields in {"full", "reduced", "minimal"})
@@ -82,15 +88,29 @@ def extract_fields(data, fields = "full"):
                 continue
 
             # parramatta station: -33.817303, 151.004823
-            if item[13] == "Parramatta":
-                # area size, # of bedrooms, # of baths, # of parkings, 
-                # # of days since 1/1/2001, latitude, longitude, price
-                entries.append(list(map(lambda x: int(x) if x != "" else 0, item[32:36])) + \
-                               [(get_date(item[16].split()[0]) - base_date).days,
-                                float(item[73]),
-                                float(item[74]),
-                                float(item[17])])
+            # if item[13] == "Parramatta":
+            # area size, # of bedrooms, # of baths, # of parkings, 
+            # # of days since 1/1/2001, latitude, longitude, price
+            entries.append(list(map(lambda x: int(x) if x != "" else 0, item[32:36])) + \
+                            [(get_date(item[16].split()[0]) - base_date).days,
+                            float(item[73]),
+                            float(item[74]),
+                            float(item[17])])
 
+    elif fields == "reduced":
+        for item in data[1:]:
+            if item[73] == "" or item[17] == "" or float(item[17]) == 0:
+                continue
+            
+            # area size, # of bedrooms, # of baths, # of parkings,
+            entries.append(list(map(lambda x: int(x) if x != "" else 0, item[32:36])) + \
+                            [(get_date(item[16].split()[0]) - base_date).days, # [4] # of days since 1/1/2001
+                            float(item[73]), # [5] latitude
+                            float(item[74]), # [6] longitude
+                            item[13], # [7] suburb
+                            get_postcode(item[14]), # [8] postcode
+                            float(item[17])]) # [9] price
+ 
     return entries
 
 def set_scale(Y):
@@ -108,7 +128,7 @@ def lr_solve(X_train, X_test, Y_train, Y_test):
 
     model = linear_model.LinearRegression(n_jobs = -1)
     model.fit(X_train, Y_train)
-    print(model.coef_)
+    print(model.coef_, model.intercept_)
 
     # print training error
     Y_pred = model.predict(X_train)
@@ -190,10 +210,10 @@ def cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 1, num_neighbours = 3):
     # learn the models
     problem = cvxpy.Problem(cvxpy.Minimize(target), constraints)
     try:
-        result = problem.solve()
+        result = problem.solve(verbose = True)
     except:
         print("resorting to SCS")
-        result = problem.solve(solver= "SCS")
+        result = problem.solve(solver = "SCS", verbose = True)
 
     # print total training error and model parameters
     print("approximate training RMSE:", numpy.sqrt(result / n))
@@ -222,30 +242,31 @@ def cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 1, num_neighbours = 3):
 
 #__main__
 
-## load data into selected_data ##
-# data = extract_fields(load_data("all", False, False), "minimal")
-# 2729-2789 has the highest # of transactions per day
-# selected_data = [item for item in data if int(item[4]) >= 2500 and int(item[4]) <= 3000]
-# with open("tiny_data", "wb") as f:
-#     pickle.dump(selected_data, f)
-with open("tiny_data", "rb") as f:
-    selected_data = pickle.load(f)
-print("using {} data points".format(len(selected_data)))
+if __name__ == "__main__":
+    ## load data into selected_data ##
+    # data = extract_fields(load_data("all", False, False), "minimal")
+    # 2729-2789 has the highest # of transactions per day
+    # selected_data = [item for item in data if int(item[4]) >= 2732 and int(item[4]) <= 2735]
+    # with open("tiny_data", "wb") as f:
+    #     pickle.dump(selected_data, f)
+    with open("tiny_data", "rb") as f:
+        selected_data = pickle.load(f)
+    print("using {} data points".format(len(selected_data)))
 
-## prepare data ##
-# train/test split
-X = [item[:-1] + [1] for item in selected_data]
-Y = [item[-1] for item in selected_data]
-X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_size = 0.2, random_state = 0)
+    ## prepare data ##
+    # train/test split
+    X = [item[:-1] + [1] for item in selected_data]
+    Y = [item[-1] for item in selected_data]
+    X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_size = 0.2, random_state = 0)
 
-# scale price
-set_scale(Y_train)
-Y_train = scaled_prices(Y_train)
-Y_test = scaled_prices(Y_test)
+    # scale price
+    set_scale(Y_train)
+    Y_train = scaled_prices(Y_train)
+    Y_test = scaled_prices(Y_test)
 
-## feed into model ##
-# linear regression
-lr_solve(X_train, X_test, Y_train, Y_test)
+    ## feed into model ##
+    # linear regression
+    lr_solve(X_train, X_test, Y_train, Y_test)
 
-# convex optimization
-cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 2)
+    # convex optimization
+    cvx_solve(X_train, X_test, Y_train, Y_test, lamb = 0.1, num_neighbours = 20)
