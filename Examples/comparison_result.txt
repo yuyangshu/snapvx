@@ -1,0 +1,21 @@
+global linear regression
+sklearn finished at 0 seconds
+[-0.00911408  0.19271286  0.121731    0.02044936  0.00048877 -0.00460085
+  0.00747566 -0.00168159  0.01401265  0.07931281] -0.04987643270334191
+global linear regression RMSE: 349262.9119949131
+
+global xgboost with 50 rounds
+xgboost RMSE: 153028.42792248417
+
+per suburb linear regression
+sklearn finished at 0 seconds
+[-0.23973542  0.74372774  0.18486624  0.23978803 -0.06726524 -0.359715
+ -0.45403931  0.1619348  -0.23030421  0.56947131] 0.5230867418327776
+per suburb linear regression RMSE: 313441.3443764035
+
+network lasso with lambda = 0.0001 number of neighbours = 3
+total cost at nodes = [167.77933884] total cost on edges = 3.8174117579717106
+global problem solved at 653 seconds
+[-0.23568242  0.74881046  0.18498483  0.24163193 -0.06574483 -0.35325893
+ -0.36232312  0.14378716 -0.15009936  0.49497225  0.46859543]
+network lasso RMSE: 310489.13832868467

@@ -28,6 +28,10 @@ class linear_regression:
         self.coefficients = coefficients
         self.intercept = intercept
 
+    @property
+    def model(self):
+        return cvxpy.atoms.affine.hstack.hstack((self.coefficients, self.intercept))
+
     def predict(self, data):
         predictions = []
         for item in data:
