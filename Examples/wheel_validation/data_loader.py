@@ -7,7 +7,7 @@ import numpy
 from scipy import spatial
 
 
-def load_data(days_in_reporting_period = 60, house_only = False, verbose = False):
+def load_data(start = 0, stop = numpy.Infinity, verbose = False):
     def read_csv_file(fname):
         with open(fname + ".csv", encoding = "utf-8-sig", errors = 'ignore') as csvfile:
             reader = csv.reader(csvfile, delimiter = ',') # dialect = "excel"
@@ -75,7 +75,7 @@ def load_data(days_in_reporting_period = 60, house_only = False, verbose = False
         print("finished reading csv files,", round(time.time() - timer_base), "seconds elapsed") # 42
 
     base_date = get_date("1/1/2001")
-    selected_data = collections.defaultdict(list)
+    selected_data = []
 
     for item in data[1:]:
         if verbose:
@@ -87,10 +87,10 @@ def load_data(days_in_reporting_period = 60, house_only = False, verbose = False
             continue
 
         date = (get_date(item[16].split()[0]) - base_date).days
-        if house_only and item[1] != "House":
+        if date < start or date > stop:
             continue
 
-        selected_data[date // days_in_reporting_period].append(extract_fields(item, date))
+        selected_data.append(extract_fields(item, date))
 
     if verbose:
         print("fields extracted from raw data,", round(time.time() - timer_base), "seconds elapsed")
