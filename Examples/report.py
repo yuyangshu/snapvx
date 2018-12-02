@@ -14,7 +14,7 @@ import data_loader
 import cvx_wheels
 
 
-def process_period(period_queue, result_queue):
+def process_period(period_queue, result_queue, log_file, log_lock):
     while not period_queue.empty():
         period, data = period_queue.get()
         print("working on period", period)
@@ -54,19 +54,30 @@ def process_period(period_queue, result_queue):
         # starting date, # of transactions, # of suburbs, average price
         result = str(period) + ", " + str(len(X)) + ", " + str(len(suburbs_to_model)) + ", " + str(numpy.mean(Y))
 
-        # global level linear regression
+        # global linear regression
         sklearn_model = linear_model.LinearRegression(n_jobs = -1)
         sklearn_model.fit(X_train, Y_train)
-        raw_predictions = sklearn_model.predict(X_test)
-        result += ", " + str(numpy.sqrt(metrics.mean_squared_error(Y_scaler.inverse_transform(numpy.reshape(raw_predictions, (-1, 1))).flatten(), Y_test)))
+        predictions = Y_scaler.inverse_transform(numpy.reshape(sklearn_model.predict(X_test), (-1, 1))).flatten()
+        percentage_errors = numpy.abs((predictions - Y_test) / Y_test)
+        result += ", " + str(numpy.sqrt(sum(numpy.power(percentage_errors, 2)) / len(percentage_errors)))
 
         # global xgboost
         num_boost_round = 50
         parameters = {"eta": 0.1, "seed": 0, "subsample": 0.8, "colsample_bytree": 0.8, "objective": "reg:linear", "max_depth": 15, "min_child_weight": 1, "silent": True}
         train_matrix = xgboost.DMatrix(X_train, Y_train)
         xgboost_model = xgboost.train(parameters, train_matrix, num_boost_round = num_boost_round)
-        raw_predictions = xgboost_model.predict(xgboost.DMatrix(X_test))
-        result += ", " + str(numpy.sqrt(metrics.mean_squared_error(Y_scaler.inverse_transform(numpy.reshape(raw_predictions, (-1, 1))).flatten(), Y_test)))
+        predictions = Y_scaler.inverse_transform(numpy.reshape(xgboost_model.predict(xgboost.DMatrix(X_test)), (-1, 1))).flatten()
+        percentage_errors = numpy.abs((predictions - Y_test) / Y_test)
+        result += ", " + str(numpy.sqrt(sum(numpy.power(percentage_errors, 2)) / len(percentage_errors)))
+        
+        # importance logging
+        scores = xgboost_model.get_score(importance_type = "gain")
+        log_lock.acquire()
+        log_file.write(str(period))
+        for item in sorted(scores, key = lambda item: scores[item]):
+            log_file.write(", " + item[1:])
+        log_file.write("\n")
+        log_lock.release()
 
 
         # per suburb model setting
@@ -103,42 +114,47 @@ def process_period(period_queue, result_queue):
             sklearn_model[suburb].fit(X_train[suburb], Y_train[suburb])
         predictions, target = [], []
         for suburb in suburbs_to_model:
-            raw_predictions = sklearn_model[suburb].predict(X_test[suburb])
-            predictions = numpy.concatenate((predictions, (Y_scalers[suburb].inverse_transform(numpy.reshape(raw_predictions, (-1, 1))).flatten())))
+            predictions = numpy.concatenate((predictions, Y_scalers[suburb].inverse_transform(numpy.reshape(sklearn_model[suburb].predict(X_test[suburb]), (-1, 1))).flatten()))
             target = numpy.concatenate((target, Y_test[suburb]))
-        result += ", " + str(numpy.sqrt(metrics.mean_squared_error(predictions, target)))
+        percentage_errors = numpy.abs((predictions - target) / target)
+        result += ", " + str(numpy.sqrt(sum(numpy.power(percentage_errors, 2)) / len(percentage_errors)))
 
         result_queue.put(result)
 
 
-# __main__
-# configs
-number_of_transactions_needed = 60
-days_in_reporting_period = 60
+if __name__ == "__main__":
+    # configs
+    number_of_transactions_needed = 60
+    days_in_reporting_period = 60
+    house_only = True
+    file_name = "{}_day_{}".format(days_in_reporting_period, "houses" if house_only else "all") 
 
-# load data
-if os.path.isfile("60_day_all"):
-    with open("60_day_all", "rb") as f:
-        all_data = pickle.load(f)
-else:
-    all_data = data_loader.load_data(days_in_reporting_period, house_only = False, verbose = True)
-    with open("60_day_all", "wb") as f:
-        pickle.dump(all_data, f)
+    # load data
+    if os.path.isfile(file_name):
+        with open(file_name, "rb") as f:
+            all_data = pickle.load(f)
+    else:
+        all_data = data_loader.load_data(days_in_reporting_period, house_only = house_only, verbose = True)
+        with open(file_name, "wb") as f:
+            pickle.dump(all_data, f)
 
-period_queue = queue.Queue()
-for period in sorted(all_data.keys()):
-    period_queue.put((period, all_data[period]))
-result_queue = queue.Queue()
+    period_queue = queue.Queue()
+    for period in sorted(all_data.keys()):
+        period_queue.put((period, all_data[period]))
+    result_queue = queue.Queue()
 
-threads = []
-for _ in range(12):
-    new_thread = threading.Thread(target = process_period, args = (period_queue, result_queue))
-    new_thread.start()
-    threads.append(new_thread)
+    with open("importance_log.csv", "w") as log_file:
+        log_lock = threading.Lock()
 
-for thread in threads:
-    thread.join()
+        threads = []
+        for _ in range(12):
+            new_thread = threading.Thread(target = process_period, args = (period_queue, result_queue, log_file, log_lock))
+            new_thread.start()
+            threads.append(new_thread)
 
-with open("60_day_all.csv", 'w') as f:
-    while not result_queue.empty():
-        f.write(result_queue.get() + '\n')
+        for thread in threads:
+            thread.join()
+
+        with open(file_name + ".csv", 'w') as f:
+            while not result_queue.empty():
+                f.write(result_queue.get() + '\n')
